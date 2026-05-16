@@ -7,19 +7,10 @@ import numpy as np
 # ─────────────────────────────────────────────
 #  CONFIGURACIÓN — cambia estas URLs a las tuyas
 # ─────────────────────────────────────────────
-GITHUB_USER = "TU_USUARIO"
-GITHUB_REPO = "TU_REPOSITORIO"
-GITHUB_BRANCH = "main"          # o "master"
+GITHUB_USER = "juliocastrolimas16-boop"
+GITHUB_REPO = "zoo_PA2"
+GITHUB_BRANCH = "main"
 MODEL_FOLDER = "model1"
-
-def raw_url(filename):
-    return (
-        f"https://raw.githubusercontent.com/"
-        f"{GITHUB_USER}/{GITHUB_REPO}/{GITHUB_BRANCH}/{MODEL_FOLDER}/{filename}"
-    )
-
-RF_URL  = raw_url("random_forest_model.pkl")
-DT_URL  = raw_url("desicion_tree_model.pkl")
 
 # ─────────────────────────────────────────────
 #  Mapa de clases
@@ -38,10 +29,35 @@ CLASS_LABELS = {
 #  Carga de modelos (con caché)
 # ─────────────────────────────────────────────
 @st.cache_resource(show_spinner=False)
-def load_model(url: str):
-    resp = requests.get(url, timeout=30)
-    resp.raise_for_status()
-    return joblib.load(io.BytesIO(resp.content))
+def load_model(filename: str):
+    """
+    Intenta cargar el modelo probando tres URLs en orden:
+      1. raw.githubusercontent.com  (archivos normales)
+      2. media.githubusercontent.com (archivos Git LFS)
+      3. github.com/raw             (fallback LFS redirect)
+    """
+    urls = [
+        f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/{GITHUB_BRANCH}/{MODEL_FOLDER}/{filename}",
+        f"https://media.githubusercontent.com/media/{GITHUB_USER}/{GITHUB_REPO}/{GITHUB_BRANCH}/{MODEL_FOLDER}/{filename}",
+        f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/raw/{GITHUB_BRANCH}/{MODEL_FOLDER}/{filename}",
+    ]
+    last_err = None
+    for url in urls:
+        try:
+            resp = requests.get(url, timeout=30, allow_redirects=True)
+            if resp.status_code == 200:
+                content = resp.content
+                # Detectar puntero LFS (texto plano ~130 bytes, no binario)
+                if content[:10] == b"version ht" or b"oid sha256" in content[:200]:
+                    continue  # no es el binario real, probar siguiente URL
+                return joblib.load(io.BytesIO(content))
+        except Exception as e:
+            last_err = e
+    raise RuntimeError(
+        f"No se pudo descargar **{filename}**.\n\nURLs probadas:\n"
+        + "\n".join(f"- `{u}`" for u in urls)
+        + f"\n\nÚltimo error: {last_err}"
+    )
 
 # ─────────────────────────────────────────────
 #  Página
@@ -209,8 +225,8 @@ with st.sidebar:
 # ── Cargar modelos ────────────────────────────
 with st.spinner("Cargando modelos desde GitHub…"):
     try:
-        rf_model = load_model(RF_URL)
-        dt_model = load_model(DT_URL)
+        rf_model = load_model("random_forest_model.pkl")
+        dt_model = load_model("desicion_tree_model.pkl")
         st.success("✅ Modelos cargados correctamente", icon="✅")
     except Exception as e:
         st.error(f"❌ Error al cargar los modelos: {e}")
