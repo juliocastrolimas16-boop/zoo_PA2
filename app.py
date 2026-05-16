@@ -226,7 +226,7 @@ with st.sidebar:
 with st.spinner("Cargando modelos desde GitHub…"):
     try:
         rf_model = load_model("random_forest_model.pkl")
-        dt_model = load_model("desicion_tree_model.pkl")
+        dt_model = load_model("decision_tree_model.pkl")
         st.success("✅ Modelos cargados correctamente", icon="✅")
     except Exception as e:
         st.error(f"❌ Error al cargar los modelos: {e}")
