@@ -16,13 +16,15 @@ MODEL_FOLDER = "model1"
 #  Mapa de clases
 # ─────────────────────────────────────────────
 CLASS_LABELS = {
-    1: "🦁 Mamífero",
-    2: "🦅 Ave",
-    3: "🐟 Pez",
-    4: "🦑 Invertebrado marino",
-    5: "🐛 Insecto",
-    6: "🦎 Reptil",
-    7: "🐸 Anfibio",
+    "Mamifero":            "🦁 Mamífero",
+    "Mamífero":            "🦁 Mamífero",
+    "Ave":                 "🦅 Ave",
+    "Pez":                 "🐟 Pez",
+    "Invertebrado_Marino": "🦑 Invertebrado marino",
+    "Invertebrado marino": "🦑 Invertebrado marino",
+    "Insecto":             "🐛 Insecto",
+    "Reptil":              "🦎 Reptil",
+    "Anfibio":             "🐸 Anfibio",
 }
 
 # ─────────────────────────────────────────────
@@ -219,8 +221,11 @@ with st.sidebar:
     )
     st.markdown("---")
     st.markdown("**Clases disponibles**")
+    seen = set()
     for v in CLASS_LABELS.values():
-        st.markdown(f"- {v}")
+        if v not in seen:
+            st.markdown(f"- {v}")
+            seen.add(v)
 
 # ── Cargar modelos ────────────────────────────
 with st.spinner("Cargando modelos desde GitHub…"):
@@ -305,8 +310,9 @@ if predict_btn:
     res_col1, res_col2 = st.columns(2)
 
     def show_result(model, model_name, box_class, col):
-        pred = model.predict(features)[0]
-        label = CLASS_LABELS.get(int(pred), f"Clase {pred}")
+        pred = model.predict(features)[0]          # puede ser str o int
+        pred_key = str(pred).strip()
+        label = CLASS_LABELS.get(pred_key, f"🐾 {pred_key}")
         prob_str = ""
         if hasattr(model, "predict_proba"):
             proba = model.predict_proba(features)[0]
