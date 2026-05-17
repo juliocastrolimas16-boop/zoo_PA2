@@ -717,3 +717,99 @@ if predict_btn:
             <div style="font-size: 1.1rem; font-weight: 600; margin: 0.5rem 0;">{conf:.1f}% de confianza</div>
             <div style="background: rgba(255,255,255,0.2); border-radius: 10px; height: 10px; overflow: hidden; margin: 1rem 0;">
                 <div style="background: {color}; width: {conf}%; height: 100%; transition: width 0.5s;"></div>
+            </div>
+            <div style="margin-top: 1rem; padding: 0.5rem; background: rgba(0,0,0,0.3); border-radius: 10px;">
+                <small>📖 {desc}</small>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    else:  # Árbol de Decisión
+        pred = dt_model.predict(features)[0]
+        pred_key = str(pred).strip()
+        info = CLASS_LABELS.get(pred_key, ("🐾", pred_key, "#4caf50", ""))
+        emoji, label, color, desc = info
+        
+        proba = dt_model.predict_proba(features)[0]
+        conf = proba.max() * 100
+        
+        st.markdown(f"""
+        <div class="result-card" style="max-width: 500px; margin: 0 auto; background: linear-gradient(135deg, rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.2) 0%, rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.1) 100%);">
+            <div style="font-size: 0.9rem; opacity: 0.8;">🌴 ÁRBOL DE DECISIÓN</div>
+            <div class="result-emoji">{emoji}</div>
+            <div class="result-label">{label}</div>
+            <div style="font-size: 1.1rem; font-weight: 600; margin: 0.5rem 0;">{conf:.1f}% de confianza</div>
+            <div style="background: rgba(255,255,255,0.2); border-radius: 10px; height: 10px; overflow: hidden; margin: 1rem 0;">
+                <div style="background: {color}; width: {conf}%; height: 100%; transition: width 0.5s;"></div>
+            </div>
+            <div style="margin-top: 1rem; padding: 0.5rem; background: rgba(0,0,0,0.3); border-radius: 10px;">
+                <small>📖 {desc}</small>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Guardar en historial
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    st.session_state.prediction_history.append({
+        'timestamp': timestamp,
+        'features': features[0].tolist(),
+        'prediction_rf': pred_rf if 'pred_rf' in locals() else None,
+        'prediction_dt': pred_dt if 'pred_dt' in locals() else None
+    })
+    
+    # Mantener solo las últimas 5 predicciones
+    if len(st.session_state.prediction_history) > 5:
+        st.session_state.prediction_history.pop(0)
+    
+    # Mostrar características detalladas
+    with st.expander("📊 Ver todas las características ingresadas", expanded=False):
+        feature_names = [
+            "pelo", "plumas", "huevos", "leche", "vuela", "acuatico",
+            "depredador", "con_dientes", "columna_vertebral", "respira",
+            "venenoso", "aletas", "patas", "cola", "domestico", "tamano_gato",
+        ]
+        
+        # Crear DataFrame para mostrar
+        df_features = pd.DataFrame([features[0]], columns=feature_names)
+        
+        # Convertir a valores legibles
+        df_display = df_features.replace({1: "✅ Sí", 0: "❌ No"})
+        
+        st.dataframe(df_display, use_container_width=True)
+        
+        # Gráfico de características
+        st.markdown("### 📈 Distribución de Características")
+        feature_binary = features[0][:12]  # Las primeras 12 son binarias
+        feature_names_binary = feature_names[:12]
+        
+        chart_data = pd.DataFrame({
+            'Característica': feature_names_binary,
+            'Valor': feature_binary
+        })
+        
+        st.bar_chart(chart_data.set_index('Característica'))
+
+# Mostrar historial de predicciones
+if st.session_state.prediction_history and not predict_btn:
+    with st.expander("📜 Historial de Predicciones Recientes", expanded=False):
+        for pred in st.session_state.prediction_history[-5:]:
+            st.markdown(f"""
+            <div style="background: rgba(255,255,255,0.05); border-radius: 10px; padding: 0.5rem; margin-bottom: 0.5rem;">
+                <small>🕐 {pred['timestamp']}</small>
+                <div>Características: {', '.join([str(int(x)) for x in pred['features'][:5]])}...</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+# Footer con información
+st.markdown("---")
+st.markdown("""
+<div style="text-align: center; color: rgba(165, 214, 167, 0.6); padding: 1rem;">
+    <div>🐾 **Zoo Classifier** - Proyecto de Machine Learning para la identificación de especies animales 🐾</div>
+    <div style="font-size: 0.8rem; margin-top: 0.5rem;">
+        Los modelos fueron entrenados con el dataset Zoo utilizando Random Forest y Árboles de Decisión
+    </div>
+    <div style="font-size: 0.7rem; margin-top: 0.5rem;">
+        © 2025 - Creado con ❤️ para la conservación animal
+    </div>
+</div>
+""", unsafe_allow_html=True)
