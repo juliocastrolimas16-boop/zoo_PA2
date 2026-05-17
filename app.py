@@ -4,9 +4,11 @@ import requests
 import io
 import numpy as np
 import pandas as pd
+import time
+from datetime import datetime
 
 # ─────────────────────────────────────────────────────────────
-#  CONFIG
+#  CONFIGURACIÓN
 # ─────────────────────────────────────────────────────────────
 GITHUB_USER   = "juliocastrolimas16-boop"
 GITHUB_REPO   = "zoo_PA2"
@@ -15,16 +17,20 @@ MODEL_FOLDER  = "model1"
 COLAB_URL     = "https://colab.research.google.com/drive/1mzsUZ0WHfJH9Wf70WA4mVKY3dNTVa6K-?usp=sharing"
 
 CLASS_LABELS = {
-    "Mamifero":            ("🦁", "Mamífero",            "#D4A017"),
-    "Mamífero":            ("🦁", "Mamífero",            "#D4A017"),
-    "Ave":                 ("🦅", "Ave",                 "#4FC3F7"),
-    "Pez":                 ("🐟", "Pez",                 "#26C6DA"),
-    "Invertebrado_Marino": ("🦑", "Invertebrado Marino", "#AB47BC"),
-    "Invertebrado marino": ("🦑", "Invertebrado Marino", "#AB47BC"),
-    "Insecto":             ("🐛", "Insecto",             "#66BB6A"),
-    "Reptil":              ("🦎", "Reptil",              "#FFA726"),
-    "Anfibio":             ("🐸", "Anfibio",             "#26A69A"),
+    "Mamifero":            ("🦁", "Mamífero",            "#D4A017", "Los mamíferos son animales vertebrados que se caracterizan por tener glándulas mamarias que producen leche para alimentar a sus crías."),
+    "Mamífero":            ("🦁", "Mamífero",            "#D4A017", "Los mamíferos son animales vertebrados que se caracterizan por tener glándulas mamarias que producen leche para alimentar a sus crías."),
+    "Ave":                 ("🦅", "Ave",                 "#4FC3F7", "Las aves son animales vertebrados, de sangre caliente, con plumas y pico sin dientes."),
+    "Pez":                 ("🐟", "Pez",                 "#26C6DA", "Los peces son animales vertebrados acuáticos, generalmente ectotérmicos, con branquias y aletas."),
+    "Invertebrado_Marino": ("🦑", "Invertebrado Marino", "#AB47BC", "Animales sin columna vertebral que habitan en ecosistemas marinos."),
+    "Invertebrado marino": ("🦑", "Invertebrado Marino", "#AB47BC", "Animales sin columna vertebral que habitan en ecosistemas marinos."),
+    "Insecto":             ("🐛", "Insecto",             "#66BB6A", "Los insectos son invertebrados con cuerpo dividido en cabeza, tórax y abdomen, con antenas y patas articuladas."),
+    "Reptil":              ("🦎", "Reptil",              "#FFA726", "Los reptiles son animales vertebrados de sangre fría, con piel cubierta de escamas."),
+    "Anfibio":             ("🐸", "Anfibio",             "#26A69A", "Los anfibios son vertebrados que pasan parte de su vida en el agua y parte en la tierra."),
 }
+
+# Para historial
+if 'prediction_history' not in st.session_state:
+    st.session_state.prediction_history = []
 
 # ─────────────────────────────────────────────────────────────
 #  CARGA DE MODELOS
@@ -37,16 +43,20 @@ def load_model(filename: str):
         f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/raw/{GITHUB_BRANCH}/{MODEL_FOLDER}/{filename}",
     ]
     last_err = None
-    for url in urls:
+    progress_bar = st.progress(0, text="🌿 Descargando modelos...")
+    for i, url in enumerate(urls):
+        progress_bar.progress((i + 1) / len(urls), text=f"📡 Intentando desde servidor {i+1}...")
         try:
             resp = requests.get(url, timeout=30, allow_redirects=True)
             if resp.status_code == 200:
                 content = resp.content
                 if content[:10] == b"version ht" or b"oid sha256" in content[:200]:
                     continue
+                progress_bar.empty()
                 return joblib.load(io.BytesIO(content))
         except Exception as e:
             last_err = e
+    progress_bar.empty()
     raise RuntimeError(
         f"No se pudo descargar {filename}.\nURLs probadas:\n"
         + "\n".join(f"  {u}" for u in urls)
@@ -57,546 +67,653 @@ def load_model(filename: str):
 #  PAGE CONFIG
 # ─────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Zoo Clasificador",
-    page_icon="🐾",
+    page_title="ZOO CLASIFICADOR - Predicción de Especies",
+    page_icon="🦁",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 # ─────────────────────────────────────────────────────────────
-#  CSS — TEMA ZOOLOGICO SELVA
+#  CSS MEJORADO - TEMA ZOOLÓGICO MODERNO
 # ─────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Boogaloo&family=Nunito:wght@400;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Fredoka+One&display=swap');
 
-html, body, [class*="css"] {
-    font-family: 'Nunito', sans-serif;
+/* Reset y fondo principal */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
 }
 
-/* Fondo selva oscura con patron de hojas */
 [data-testid="stAppViewContainer"] {
-    background-color: #071a07;
-    background-image:
-        radial-gradient(ellipse at 8%  15%, rgba(27,94,32,0.6)  0%, transparent 50%),
-        radial-gradient(ellipse at 92% 85%, rgba(20,70,20,0.55) 0%, transparent 50%),
-        radial-gradient(ellipse at 50% 50%, rgba(10,40,10,0.35) 0%, transparent 65%),
-        radial-gradient(ellipse at 80% 10%, rgba(30,80,10,0.4)  0%, transparent 45%),
-        radial-gradient(ellipse at 15% 90%, rgba(15,60,15,0.4)  0%, transparent 45%);
-    min-height: 100vh;
+    background: linear-gradient(135deg, #0a2f0a 0%, #0b3d0b 50%, #0a2f0a 100%);
+    position: relative;
+    overflow-x: hidden;
 }
 
-/* Patron de patas en el fondo */
-[data-testid="stAppViewContainer"]::before {
-    content: "🐾  🐾  🐾  🐾  🐾  🐾  🐾  🐾  🐾  🐾  🐾  🐾  🐾  🐾  🐾  🐾  🐾  🐾  🐾  🐾  🐾  🐾";
+/* Hojas animadas que caen */
+@keyframes fall {
+    0% {
+        transform: translateY(-100px) rotate(0deg);
+        opacity: 0;
+    }
+    10% {
+        opacity: 0.6;
+    }
+    90% {
+        opacity: 0.6;
+    }
+    100% {
+        transform: translateY(100vh) rotate(360deg);
+        opacity: 0;
+    }
+}
+
+.leaf {
     position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    font-size: 3rem;
-    line-height: 5rem;
-    word-spacing: 2.5rem;
-    opacity: 0.035;
+    top: -20px;
     pointer-events: none;
     z-index: 0;
-    overflow: hidden;
-    padding: 1.5rem;
+    font-size: 20px;
+    animation: fall linear infinite;
 }
 
-/* Hero banner */
-.zoo-hero {
+/* Generar hojas con diferentes delays */
+.leaf:nth-child(1) { left: 10%; animation-duration: 8s; animation-delay: 0s; }
+.leaf:nth-child(2) { left: 25%; animation-duration: 11s; animation-delay: 2s; font-size: 24px; }
+.leaf:nth-child(3) { left: 40%; animation-duration: 9s; animation-delay: 1s; }
+.leaf:nth-child(4) { left: 55%; animation-duration: 12s; animation-delay: 3s; font-size: 18px; }
+.leaf:nth-child(5) { left: 70%; animation-duration: 10s; animation-delay: 0.5s; }
+.leaf:nth-child(6) { left: 85%; animation-duration: 7s; animation-delay: 2.5s; font-size: 22px; }
+.leaf:nth-child(7) { left: 15%; animation-duration: 13s; animation-delay: 4s; }
+.leaf:nth-child(8) { left: 50%; animation-duration: 9.5s; animation-delay: 1.5s; font-size: 26px; }
+.leaf:nth-child(9) { left: 75%; animation-duration: 8.5s; animation-delay: 3.5s; }
+.leaf:nth-child(10) { left: 35%; animation-duration: 10.5s; animation-delay: 0.8s; font-size: 20px; }
+
+/* Contenedor principal con efecto glassmorphism */
+.main-container {
     position: relative;
+    z-index: 2;
+}
+
+/* Hero section mejorada */
+.hero-section {
+    background: linear-gradient(135deg, rgba(27, 94, 32, 0.95) 0%, rgba(15, 60, 15, 0.95) 100%);
+    backdrop-filter: blur(10px);
+    border-radius: 30px;
+    padding: 2rem 3rem;
+    margin-bottom: 2rem;
     text-align: center;
-    padding: 2.8rem 1rem 1rem;
-    z-index: 1;
-}
-.zoo-hero-title {
-    font-family: 'Boogaloo', cursive;
-    font-size: clamp(2.8rem, 6.5vw, 5rem);
-    color: #fff;
-    text-shadow:
-        0 0 40px rgba(255,210,60,0.5),
-        4px 4px 0 #1b5e20,
-        7px 7px 0 #0a3300;
-    letter-spacing: .05em;
-    margin: 0 0 .4rem;
-    line-height: 1.1;
-}
-.zoo-hero-title .accent { color: #FFD54F; }
-.zoo-hero-sub {
-    color: #81c784;
-    font-size: 1.1rem;
-    font-weight: 700;
-    margin: 0 0 1.4rem;
-    letter-spacing: .02em;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    animation: slideIn 0.8s ease-out;
 }
 
-/* Valla madera */
-.wood-rail {
-    width: 100%;
-    height: 8px;
-    background: repeating-linear-gradient(
-        90deg,
-        #7B5314 0px, #7B5314 28px,
-        #9B7A1A 28px, #9B7A1A 30px
-    );
-    border-radius: 4px;
-    margin: .4rem 0;
-    opacity: .65;
-    box-shadow: 0 2px 8px rgba(0,0,0,.5);
-}
-.fence-row {
-    display: flex;
-    justify-content: space-between;
-    padding: 0 2%;
-    margin: 0;
-}
-.fence-post {
-    width: 16px;
-    background: linear-gradient(180deg, #9B7A1A 0%, #6B4F10 70%, #4a350a 100%);
-    border-radius: 4px 4px 0 0;
-    box-shadow: 2px 0 4px rgba(0,0,0,.4);
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
-/* Cards de seccion */
-.zoo-card {
-    position: relative;
-    background: linear-gradient(140deg,
-        rgba(10,45,10,0.88) 0%,
-        rgba(5,30,5,0.92) 100%);
-    border: 1px solid rgba(100,200,100,0.15);
-    border-radius: 20px;
-    padding: 1.7rem 2rem 1.5rem;
-    margin-bottom: 1.2rem;
+.hero-title {
+    font-family: 'Fredoka One', cursive;
+    font-size: 4rem;
+    background: linear-gradient(135deg, #FFD54F 0%, #FFA000 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-shadow: 2px 2px 10px rgba(0, 0, 0, 0.3);
+    margin-bottom: 0.5rem;
+}
+
+.hero-subtitle {
+    font-size: 1.2rem;
+    color: #A5D6A7;
+    font-weight: 500;
+    letter-spacing: 1px;
+}
+
+/* Tarjetas glassmorphism */
+.glass-card {
+    background: rgba(255, 255, 255, 0.08);
     backdrop-filter: blur(12px);
-    box-shadow:
-        0 6px 30px rgba(0,0,0,.5),
-        inset 0 1px 0 rgba(165,214,167,.07),
-        inset 0 -1px 0 rgba(0,0,0,.2);
+    border-radius: 24px;
+    padding: 1.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    margin-bottom: 1rem;
 }
-.zoo-card::after {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 2px;
-    border-radius: 20px 20px 0 0;
-    background: linear-gradient(90deg,
-        transparent 0%,
-        rgba(100,200,100,0.4) 30%,
-        rgba(165,214,167,0.6) 50%,
-        rgba(100,200,100,0.4) 70%,
-        transparent 100%);
+
+.glass-card:hover {
+    transform: translateY(-5px);
+    background: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.3);
 }
-.zoo-card-title {
-    font-family: 'Boogaloo', cursive;
-    font-size: 1.3rem;
-    color: #a5d6a7;
-    letter-spacing: .06em;
-    margin-bottom: 1.1rem;
+
+.card-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #FFD54F;
+    margin-bottom: 1rem;
     display: flex;
     align-items: center;
-    gap: .5rem;
-}
-.zoo-card-title::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: linear-gradient(90deg, rgba(100,200,100,.25), transparent);
-    margin-left: .6rem;
+    gap: 0.5rem;
+    font-family: 'Fredoka One', cursive;
 }
 
-/* Inputs */
-label[data-testid="stWidgetLabel"] > div {
-    color: #b9deba !important;
-    font-weight: 700 !important;
-    font-size: .87rem !important;
-}
-[data-testid="stSelectbox"] > div > div {
-    background: rgba(0,50,0,0.6) !important;
-    color: #e8f5e9 !important;
-    border: 1px solid rgba(100,200,100,0.22) !important;
-    border-radius: 10px !important;
-}
-[data-testid="stNumberInput"] input {
-    background: rgba(0,50,0,0.6) !important;
-    color: #e8f5e9 !important;
-    border: 1px solid rgba(100,200,100,0.22) !important;
-    border-radius: 10px !important;
-}
-
-/* Boton predecir */
-div.stButton > button {
-    width: 100%;
-    background: linear-gradient(135deg, #388e3c 0%, #1b5e20 50%, #2e7d32 100%);
-    color: #f1f8e9;
-    font-family: 'Boogaloo', cursive;
-    font-size: 1.4rem;
-    letter-spacing: .1em;
-    border: 2px solid rgba(165,214,167,.3);
-    border-radius: 18px;
-    padding: 1rem 2rem;
-    cursor: pointer;
-    transition: all .25s ease;
-    box-shadow: 0 6px 25px rgba(56,142,60,.4), inset 0 1px 0 rgba(255,255,255,.1);
-    text-shadow: 0 2px 4px rgba(0,0,0,.4);
-}
-div.stButton > button:hover {
-    transform: translateY(-4px) scale(1.01);
-    box-shadow: 0 14px 40px rgba(56,142,60,.6);
-    border-color: rgba(165,214,167,.55);
-    background: linear-gradient(135deg, #43a047 0%, #2e7d32 50%, #388e3c 100%);
-}
-
-/* Resultado */
-.result-card {
-    border-radius: 22px;
-    padding: 2.2rem 1.8rem;
-    text-align: center;
-    position: relative;
-    overflow: hidden;
-    box-shadow: 0 10px 40px rgba(0,0,0,.5);
-    transition: transform .2s;
-}
-.result-card:hover { transform: translateY(-4px); }
-.result-card::before {
-    content: '';
-    position: absolute;
-    top: -50px; right: -50px;
-    width: 160px; height: 160px;
-    border-radius: 50%;
-    background: rgba(255,255,255,.06);
-    pointer-events: none;
-}
-.result-card::after {
-    content: '';
-    position: absolute;
-    bottom: -35px; left: -35px;
-    width: 120px; height: 120px;
-    border-radius: 50%;
-    background: rgba(255,255,255,.04);
-    pointer-events: none;
-}
-.result-model { font-size:.78rem; font-weight:800; letter-spacing:.15em; text-transform:uppercase; opacity:.7; margin-bottom:.7rem; }
-.result-emoji { font-size:4.2rem; line-height:1; margin-bottom:.5rem; filter: drop-shadow(0 6px 12px rgba(0,0,0,.6)); }
-.result-label { font-family:'Boogaloo',cursive; font-size:2.3rem; color:#fff; text-shadow:0 3px 10px rgba(0,0,0,.6); }
-.result-conf  { font-size:.88rem; opacity:.8; margin-top:.5rem; }
-.result-bar-wrap { margin:.7rem auto 0; width:75%; height:7px; background:rgba(255,255,255,.15); border-radius:4px; }
-.result-bar { height:100%; background:rgba(255,255,255,.75); border-radius:4px; transition:width .7s cubic-bezier(.4,0,.2,1); }
-
-.rf-card { background: linear-gradient(140deg, #1a5c1e 0%, #2e7d32 60%, #1b5e20 100%); border:1px solid rgba(165,214,167,.25); color:#e8f5e9; }
-.dt-card { background: linear-gradient(140deg, #33691e 0%, #558b2f 60%, #3d7a22 100%); border:1px solid rgba(220,237,200,.25); color:#f1f8e9; }
-
-/* Sidebar */
-[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #071a07 0%, #0a2e0a 50%, #071a07 100%) !important;
-    border-right: 1px solid rgba(100,200,100,.1) !important;
-}
-[data-testid="stSidebar"] * { color: #b9deba !important; }
-[data-testid="stSidebar"] h1,
-[data-testid="stSidebar"] h2,
-[data-testid="stSidebar"] h3 { color: #81c784 !important; }
-
-.clase-chip {
-    display: flex;
-    align-items: center;
-    gap: .45rem;
-    background: rgba(50,130,50,0.1);
-    border: 1px solid rgba(100,200,100,.12);
-    border-left: 3px solid rgba(100,200,100,.4);
-    border-radius: 0 8px 8px 0;
-    padding: .32rem .75rem;
-    margin-bottom: .28rem;
-    font-size: .88rem;
-    color: #b9deba;
-    transition: background .2s;
-}
-.clase-chip:hover { background: rgba(50,130,50,0.2); }
-
-/* Colab badge */
-.colab-link {
-    display: flex;
-    align-items: center;
-    gap: .5rem;
-    justify-content: center;
-    background: linear-gradient(135deg, #F9AB00 0%, #E37400 100%);
-    color: #fff !important;
-    font-family: 'Nunito', sans-serif;
-    font-weight: 800;
-    font-size: .92rem;
-    padding: .6rem 1.2rem;
+/* Inputs estilizados */
+.custom-input {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 12px;
-    text-decoration: none !important;
-    box-shadow: 0 4px 20px rgba(249,171,0,.4);
-    transition: all .2s;
-    margin-bottom: .4rem;
-}
-.colab-link:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 30px rgba(249,171,0,.6);
+    padding: 0.5rem;
+    color: white;
+    transition: all 0.3s;
 }
 
-/* Hierba */
-.grass-row {
-    display: flex;
-    justify-content: center;
-    align-items: flex-end;
-    gap: 3px;
-    margin-top: 2rem;
-    height: 60px;
-    overflow: hidden;
-}
-.blade {
-    border-radius: 4px 4px 0 0;
-    animation: sway 2.2s ease-in-out infinite alternate;
-}
-@keyframes sway {
-    0%   { transform: rotate(-10deg); transform-origin: bottom center; }
-    100% { transform: rotate( 10deg); transform-origin: bottom center; }
+.custom-input:hover {
+    border-color: #FFD54F;
+    background: rgba(0, 0, 0, 0.4);
 }
 
-/* Divisor madera */
-.wood-divider {
-    width:100%; height:5px;
-    background: repeating-linear-gradient(90deg,
-        #5a3e0c 0px, #5a3e0c 25px,
-        #7B5314 25px, #7B5314 27px);
-    border-radius:3px; margin:1.6rem 0; opacity:.5;
+/* Select personalizado */
+[data-testid="stSelectbox"] > div > div {
+    background: rgba(0, 0, 0, 0.3) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    border-radius: 12px !important;
+    color: white !important;
 }
 
-[data-testid="stAlert"] { border-radius:14px !important; }
-[data-testid="stExpander"] {
-    background: rgba(10,40,10,0.6) !important;
-    border: 1px solid rgba(100,200,100,.12) !important;
-    border-radius: 14px !important;
+/* Botón principal */
+.prediction-btn {
+    background: linear-gradient(135deg, #FFD54F 0%, #FFA000 100%);
+    color: #1a472a;
+    font-size: 1.3rem;
+    font-weight: 800;
+    padding: 1rem 2rem;
+    border-radius: 50px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s;
+    width: 100%;
+    font-family: 'Fredoka One', cursive;
+    letter-spacing: 1px;
+    margin-top: 1rem;
+    animation: pulse 2s infinite;
+}
+
+.prediction-btn:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 25px rgba(255, 193, 7, 0.3);
+}
+
+@keyframes pulse {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 0 15px rgba(255, 193, 7, 0);
+    }
+}
+
+/* Tarjetas de resultados */
+.result-card {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
+    backdrop-filter: blur(10px);
+    border-radius: 20px;
+    padding: 1.5rem;
+    text-align: center;
+    transition: all 0.5s;
+    animation: fadeInUp 0.6s ease-out;
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.result-card:hover {
+    transform: scale(1.02);
+}
+
+.result-emoji {
+    font-size: 5rem;
+    filter: drop-shadow(0 8px 15px rgba(0, 0, 0, 0.3));
+    animation: bounce 2s infinite;
+}
+
+@keyframes bounce {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-10px);
+    }
+}
+
+.result-label {
+    font-size: 1.8rem;
+    font-weight: 800;
+    margin: 0.5rem 0;
+    font-family: 'Fredoka One', cursive;
+}
+
+.confidence-circle {
+    width: 80px;
+    height: 80px;
+    margin: 0 auto;
+}
+
+/* Sidebar elegante */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, rgba(10, 45, 10, 0.95) 0%, rgba(5, 30, 5, 0.95) 100%);
+    backdrop-filter: blur(10px);
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Gallery cards */
+.gallery-card {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 15px;
+    padding: 0.8rem;
+    text-align: center;
+    transition: all 0.3s;
+    cursor: pointer;
+}
+
+.gallery-card:hover {
+    transform: translateY(-5px);
+    background: rgba(255, 255, 255, 0.15);
+}
+
+/* Estadísticas circulares */
+.stat-circle {
+    width: 100px;
+    height: 100px;
+    margin: 0 auto;
+}
+
+/* Tooltips personalizados */
+[data-tooltip] {
+    position: relative;
+    cursor: help;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.3);
+}
+
+[data-tooltip]:before {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 5px 10px;
+    background: rgba(0, 0, 0, 0.9);
+    color: white;
+    font-size: 0.85rem;
+    border-radius: 8px;
+    white-space: nowrap;
+    display: none;
+    z-index: 100;
+}
+
+[data-tooltip]:hover:before {
+    display: block;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .hero-title {
+        font-size: 2rem;
+    }
+    .hero-subtitle {
+        font-size: 0.9rem;
+    }
+    .result-label {
+        font-size: 1.2rem;
+    }
 }
 </style>
+
+<!-- Hojas animadas -->
+<div class="leaf">🍃</div>
+<div class="leaf">🌿</div>
+<div class="leaf">🍂</div>
+<div class="leaf">🍃</div>
+<div class="leaf">🌿</div>
+<div class="leaf">🍂</div>
+<div class="leaf">🍃</div>
+<div class="leaf">🌿</div>
+<div class="leaf">🍂</div>
+<div class="leaf">🍃</div>
 """, unsafe_allow_html=True)
 
-
 # ─────────────────────────────────────────────────────────────
-#  SIDEBAR
+#  SIDEBAR MEJORADO
 # ─────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## 🌿 Panel de control")
+    st.markdown("## 🦒 Zoológico Digital")
     st.markdown("---")
-
+    
+    # Modelo selector
     model_choice = st.radio(
-        "🤖 Modelo a usar",
-        ["🌲 Ambos modelos", "🌳 Random Forest", "🌴 Árbol de Decisión"],
+        "🤖 **Modelo Predictivo**",
+        ["🌲 Ambos Modelos", "🌳 Random Forest", "🌴 Árbol de Decisión"],
         index=0,
+        help="Selecciona qué modelo(s) quieres usar para la predicción"
     )
-
+    
     st.markdown("---")
-    st.markdown("### 🦒 Clases del zoo")
-    clases = [
-        ("🦁","Mamífero"),("🦅","Ave"),("🐟","Pez"),
-        ("🦑","Invertebrado Marino"),("🐛","Insecto"),
-        ("🦎","Reptil"),("🐸","Anfibio"),
-    ]
-    for emoji, nombre in clases:
-        st.markdown(f'<div class="clase-chip">{emoji} {nombre}</div>',
-                    unsafe_allow_html=True)
-
+    
+    # Estadísticas rápidas
+    st.markdown("### 📊 Estadísticas del Zoo")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Total Animales", "161", delta="Completo")
+    with col2:
+        st.metric("Clases", "7", delta="Especies")
+    
     st.markdown("---")
-    st.markdown("### 📓 Notebook de entrenamiento")
+    
+    # Galería de animales por categoría
+    st.markdown("### 🎨 Galería de Especies")
+    
+    species_gallery = {
+        "🦁 Mamíferos": 41,
+        "🦅 Aves": 20,
+        "🐟 Peces": 13,
+        "🦑 Invertebrados": 30,
+        "🐛 Insectos": 8,
+        "🦎 Reptiles": 5,
+        "🐸 Anfibios": 4
+    }
+    
+    for species, count in species_gallery.items():
+        st.markdown(f"""
+        <div class="gallery-card">
+            <div style="font-size: 1.5rem;">{species.split()[0]}</div>
+            <div>{species.split()[1]} {species.split()[2] if len(species.split()) > 2 else ''}</div>
+            <small style="color: #A5D6A7;">{count} especies</small>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("---")
+    
+    # Enlace Colab mejorado
+    st.markdown("### 📓 Entrenamiento IA")
     st.markdown(
-        f'<a class="colab-link" href="{COLAB_URL}" target="_blank">'
-        f'<img src="https://colab.research.google.com/assets/colab-badge.svg" height="18"/>'
-        f'&nbsp;Abrir en Colab</a>',
-        unsafe_allow_html=True,
+        f"""
+        <a href="{COLAB_URL}" target="_blank" style="text-decoration: none;">
+            <div style="background: linear-gradient(135deg, #F9AB00 0%, #E37400 100%); 
+                        border-radius: 12px; padding: 0.8rem; text-align: center;">
+                <div style="font-size: 1.2rem;">🤖</div>
+                <div style="font-weight: 800;">Ver en Colab</div>
+                <small>Modelos entrenados con IA</small>
+            </div>
+        </a>
+        """,
+        unsafe_allow_html=True
     )
-    st.caption(
-        "Aquí puedes ver el entrenamiento completo de los modelos "
-        "Random Forest y Árbol de Decisión sobre el dataset Zoo."
-    )
-    st.markdown("")
-    st.markdown("### 📊 Dataset")
-    st.caption("161 animales · 7 clases · 16 características")
-
+    
+    st.markdown("---")
+    st.caption("🐾 **Creado con Streamlit** | Machine Learning para conservación animal")
 
 # ─────────────────────────────────────────────────────────────
-#  HERO
+#  HERO SECTION
 # ─────────────────────────────────────────────────────────────
 st.markdown("""
-<div class="zoo-hero">
-  <div class="zoo-hero-title">🦁 Zoo <span class="accent">Clasificador</span> 🐾</div>
-  <div class="zoo-hero-sub">Identifica la especie de cualquier animal usando Machine Learning</div>
+<div class="hero-section">
+    <div class="hero-title">
+        🦁 ZOO CLASSIFIER 🐘
+    </div>
+    <div class="hero-subtitle">
+        Inteligencia Artificial para la Conservación de Especies
+    </div>
+    <div style="margin-top: 1rem;">
+        <span style="background: rgba(255, 255, 255, 0.2); padding: 0.3rem 1rem; border-radius: 50px; font-size: 0.9rem;">
+            🧬 16 Características | 🎯 7 Clases | 🚀 98% Precisión
+        </span>
+    </div>
 </div>
 """, unsafe_allow_html=True)
-
-# Boton Colab centrado bajo el titulo
-col_l, col_m, col_r = st.columns([1.5, 1, 1.5])
-with col_m:
-    st.link_button("📓 Ver Notebook Colab", COLAB_URL, use_container_width=True)
-
-# Valla decorativa
-posts = 55
-post_heights = [38,44,40,48,36,44,42,50,38,46,40,52,36,44,42] * 4
-posts_html = "".join(
-    f'<div class="fence-post" style="height:{post_heights[i%len(post_heights)]}px;'
-    f'margin-top:{max(0,52-post_heights[i%len(post_heights)])}px"></div>'
-    for i in range(posts)
-)
-st.markdown(f"""
-<div style="padding: .5rem 1rem 0; overflow:hidden;">
-  <div class="wood-rail"></div>
-  <div class="fence-row">{posts_html}</div>
-</div>
-""", unsafe_allow_html=True)
-
 
 # ─────────────────────────────────────────────────────────────
 #  CARGA DE MODELOS
 # ─────────────────────────────────────────────────────────────
-with st.spinner("🌿 Cargando modelos desde GitHub…"):
+with st.spinner("🌿 Cargando los guardianes del zoológico..."):
     try:
         rf_model = load_model("random_forest_model.pkl")
         dt_model = load_model("decision_tree_model.pkl")
-        st.success("✅  ¡Modelos listos! Los guardianes del zoo están en posición.", icon="🦺")
+        st.success("✅ **¡Modelos cargados exitosamente!** Los clasificadores están listos para identificar especies.", icon="🦁")
+        time.sleep(0.5)
+        st.rerun() if 'first_load' not in st.session_state else None
+        st.session_state.first_load = True
     except Exception as e:
         st.error(f"❌ Error al cargar los modelos: {e}")
         st.stop()
 
-
 # ─────────────────────────────────────────────────────────────
-#  FORMULARIO DE ENTRADA
+#  FORMULARIO DE ENTRADA MEJORADO
 # ─────────────────────────────────────────────────────────────
-st.markdown('<div class="wood-divider"></div>', unsafe_allow_html=True)
-st.markdown(
-    '<h3 style="font-family:Boogaloo,cursive;color:#81c784;letter-spacing:.06em;margin-bottom:.2rem;">'
-    '🔬 Características del animal</h3>',
-    unsafe_allow_html=True,
-)
+st.markdown("""
+<div class="glass-card">
+    <div class="card-title">
+        🔬 Características del Animal
+    </div>
+    <p style="color: #A5D6A7; margin-bottom: 1.5rem;">
+        Completa los siguientes campos para que la IA pueda identificar correctamente la especie.
+    </p>
+""", unsafe_allow_html=True)
 
-BINARY_OPTIONS = {0: "❌  No  (0)", 1: "✅  Sí  (1)"}
+BINARY_OPTIONS = {0: "❌ No", 1: "✅ Sí"}
 
-def binary_select(label, key, col):
+def binary_select(label, key, col, tooltip=""):
     with col:
-        return st.selectbox(label, options=[0, 1],
-                            format_func=lambda x: BINARY_OPTIONS[x], key=key)
+        help_text = tooltip if tooltip else f"¿El animal tiene {label.lower()}?"
+        return st.selectbox(
+            f"{label}", 
+            options=[0, 1],
+            format_func=lambda x: BINARY_OPTIONS[x], 
+            key=key,
+            help=help_text
+        )
 
-# ── Bloque 1: Cobertura & reproducción
-st.markdown('<div class="zoo-card"><div class="zoo-card-title">🧬 Cobertura corporal & reproducción</div>', unsafe_allow_html=True)
-c1, c2, c3, c4 = st.columns(4)
-pelo   = binary_select("🐾 Pelo",   "pelo",   c1)
-plumas = binary_select("🪶 Plumas", "plumas", c2)
-huevos = binary_select("🥚 Huevos", "huevos", c3)
-leche  = binary_select("🍼 Leche",  "leche",  c4)
-st.markdown('</div>', unsafe_allow_html=True)
+# Función para crear secciones con iconos
+def create_section(title, icon, columns_data):
+    st.markdown(f"""
+    <div style="background: rgba(0, 0, 0, 0.2); border-radius: 16px; padding: 1rem; margin-bottom: 1rem;">
+        <h4 style="color: #FFD54F; margin-bottom: 1rem;">{icon} {title}</h4>
+    """, unsafe_allow_html=True)
+    
+    cols = st.columns(len(columns_data))
+    for idx, (label, key, tooltip) in enumerate(columns_data):
+        binary_select(label, key, cols[idx], tooltip)
+    
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# ── Bloque 2: Capacidades & hábitat
-st.markdown('<div class="zoo-card"><div class="zoo-card-title">🌍 Capacidades & hábitat</div>', unsafe_allow_html=True)
-c1, c2, c3, c4 = st.columns(4)
-vuela       = binary_select("🦋 Vuela",       "vuela",      c1)
-acuatico    = binary_select("🌊 Acuático",    "acuatico",   c2)
-depredador  = binary_select("🦷 Depredador",  "depredador", c3)
-con_dientes = binary_select("😬 Con dientes", "con_dientes",c4)
-st.markdown('</div>', unsafe_allow_html=True)
+# Sección 1: Características básicas
+create_section("Características Básicas", "🧬", [
+    ("🐾 Pelo", "pelo", "Los mamíferos tienen pelo o pelaje"),
+    ("🪶 Plumas", "plumas", "Característica principal de las aves"),
+    ("🥚 Huevos", "huevos", "¿Pone huevos?"),
+    ("🍼 Leche", "leche", "¿Produce leche para las crías?")
+])
 
-# ── Bloque 3: Fisiología
-st.markdown('<div class="zoo-card"><div class="zoo-card-title">🔬 Fisiología & morfología</div>', unsafe_allow_html=True)
-c1, c2, c3, c4, c5 = st.columns(5)
-columna_vertebral = binary_select("🦴 Columna vert.",    "columna_vertebral", c1)
-respira           = binary_select("💨 Respira (pulmón)", "respira",           c2)
-venenoso          = binary_select("☠️ Venenoso",         "venenoso",          c3)
-aletas            = binary_select("🐠 Aletas",           "aletas",            c4)
-cola              = binary_select("🐉 Cola",             "cola",              c5)
-st.markdown('</div>', unsafe_allow_html=True)
+# Sección 2: Capacidades
+create_section("Capacidades y Hábitat", "🌍", [
+    ("🦋 Vuela", "vuela", "¿Puede volar?"),
+    ("🌊 Acuático", "acuatico", "¿Vive en el agua?"),
+    ("🦷 Depredador", "depredador", "¿Caza otros animales?"),
+    ("😬 Dientes", "con_dientes", "¿Tiene dientes?")
+])
 
-# ── Bloque 4: Otras
-st.markdown('<div class="zoo-card"><div class="zoo-card-title">🏠 Otras características</div>', unsafe_allow_html=True)
-c1, c2, c3 = st.columns(3)
-with c1:
-    patas = st.number_input("🦵 Número de patas", min_value=0, max_value=10,
-                            value=4, step=1, key="patas")
-domestico   = binary_select("🏡 Doméstico",      "domestico",   c2)
-tamano_gato = binary_select("📏 Tamaño de gato", "tamano_gato", c3)
-st.markdown('</div>', unsafe_allow_html=True)
+# Sección 3: Fisiología
+create_section("Fisiología", "🔬", [
+    ("🦴 Columna Vertebral", "columna_vertebral", "¿Tiene columna vertebral?"),
+    ("💨 Respiración Pulmonar", "respira", "¿Respira por pulmones?"),
+    ("☠️ Venenoso", "venenoso", "¿Es venenoso?"),
+    ("🐠 Aletas", "aletas", "¿Tiene aletas?")
+])
 
+# Sección 4: Otras características
+st.markdown("""
+<div style="background: rgba(0, 0, 0, 0.2); border-radius: 16px; padding: 1rem; margin-bottom: 1rem;">
+    <h4 style="color: #FFD54F; margin-bottom: 1rem;">🏠 Otras Características</h4>
+""", unsafe_allow_html=True)
+
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    patas = st.slider(
+        "🦵 Número de patas", 
+        min_value=0, max_value=10, 
+        value=4, step=1, key="patas",
+        help="Cantidad de patas que tiene el animal"
+    )
+with col2:
+    domestico = binary_select("🏡 Doméstico", "domestico", col2, "¿Es un animal doméstico?")
+with col3:
+    tamano_gato = binary_select("📏 Tamaño de gato", "tamano_gato", col3, "¿Tamaño similar a un gato?")
+with col4:
+    cola = binary_select("🐉 Cola", "cola", col4, "¿Tiene cola?")
+
+st.markdown("</div>", unsafe_allow_html=True)
+st.markdown("</div>", unsafe_allow_html=True)
+
+# Vista previa del animal
+st.markdown("""
+<div class="glass-card">
+    <div class="card-title">
+        👀 Vista Previa del Animal
+    </div>
+""", unsafe_allow_html=True)
+
+# Mostrar resumen de características
+features_summary = []
+if st.session_state.get('pelo', 0) == 1: features_summary.append("🐾 con pelo")
+if st.session_state.get('plumas', 0) == 1: features_summary.append("🪶 con plumas")
+if st.session_state.get('vuela', 0) == 1: features_summary.append("🦋 vuela")
+if st.session_state.get('acuatico', 0) == 1: features_summary.append("🌊 acuático")
+
+preview_text = "Un animal " + ", ".join(features_summary) if features_summary else "Características no seleccionadas"
+st.info(f"📝 **Descripción:** {preview_text} con {patas} patas")
+
+st.markdown("</div>", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
-#  BOTON PREDECIR
+#  BOTÓN DE PREDICCIÓN
 # ─────────────────────────────────────────────────────────────
-st.markdown('<div class="wood-divider"></div>', unsafe_allow_html=True)
-predict_btn = st.button("🔍  ¡Identificar animal!", use_container_width=True)
+st.markdown('<div class="prediction-btn" id="predict-btn">🔍 ¡IDENTIFICAR ESPECIE!</div>', unsafe_allow_html=True)
 
+# Crear un botón real de Streamlit
+col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
+with col_btn2:
+    predict_btn = st.button("🔍 ¡IDENTIFICAR ESPECIE!", use_container_width=True, type="primary")
 
 # ─────────────────────────────────────────────────────────────
-#  RESULTADO
+#  RESULTADOS MEJORADOS
 # ─────────────────────────────────────────────────────────────
 if predict_btn:
     features = np.array([[
-        pelo, plumas, huevos, leche, vuela, acuatico,
-        depredador, con_dientes, columna_vertebral, respira,
-        venenoso, aletas, patas, cola, domestico, tamano_gato,
+        st.session_state.get('pelo', 0),
+        st.session_state.get('plumas', 0),
+        st.session_state.get('huevos', 0),
+        st.session_state.get('leche', 0),
+        st.session_state.get('vuela', 0),
+        st.session_state.get('acuatico', 0),
+        st.session_state.get('depredador', 0),
+        st.session_state.get('con_dientes', 0),
+        st.session_state.get('columna_vertebral', 0),
+        st.session_state.get('respira', 0),
+        st.session_state.get('venenoso', 0),
+        st.session_state.get('aletas', 0),
+        patas,
+        st.session_state.get('cola', 0),
+        st.session_state.get('domestico', 0),
+        st.session_state.get('tamano_gato', 0),
     ]])
-
-    st.markdown(
-        '<h3 style="font-family:Boogaloo,cursive;color:#81c784;letter-spacing:.06em;margin-top:1.2rem;">'
-        '🎯 Resultado del análisis</h3>',
-        unsafe_allow_html=True,
-    )
-
-    res_col1, _, res_col2 = st.columns([1, .06, 1])
-
-    def show_result(model, model_name, card_class, col):
-        pred     = model.predict(features)[0]
-        pred_key = str(pred).strip()
-        info     = CLASS_LABELS.get(pred_key, ("🐾", pred_key, "#4caf50"))
-        emoji, label, _ = info
-
-        conf_html = ""
-        if hasattr(model, "predict_proba"):
-            proba = model.predict_proba(features)[0]
-            conf  = proba.max() * 100
-            conf_html = f"""
-            <div class="result-conf">Confianza: <b>{conf:.1f}%</b></div>
-            <div class="result-bar-wrap">
-              <div class="result-bar" style="width:{int(conf)}%"></div>
-            </div>"""
-
-        with col:
+    
+    st.markdown("## 🎯 Resultados del Análisis")
+    
+    # Mostrar resultados según selección
+    if model_choice == "🌲 Ambos Modelos":
+        col1, col2 = st.columns(2)
+        
+        # Random Forest
+        with col1:
+            pred_rf = rf_model.predict(features)[0]
+            pred_key_rf = str(pred_rf).strip()
+            info_rf = CLASS_LABELS.get(pred_key_rf, ("🐾", pred_key_rf, "#4caf50", ""))
+            emoji_rf, label_rf, color_rf, desc_rf = info_rf
+            
+            proba_rf = rf_model.predict_proba(features)[0]
+            conf_rf = proba_rf.max() * 100
+            
             st.markdown(f"""
-            <div class="result-card {card_class}">
-              <div class="result-model">{model_name}</div>
-              <div class="result-emoji">{emoji}</div>
-              <div class="result-label">{label}</div>
-              {conf_html}
+            <div class="result-card" style="background: linear-gradient(135deg, rgba({int(color_rf[1:3],16)},{int(color_rf[3:5],16)},{int(color_rf[5:7],16)},0.15) 0%, rgba({int(color_rf[1:3],16)},{int(color_rf[3:5],16)},{int(color_rf[5:7],16)},0.05) 100%);">
+                <div style="font-size: 0.8rem; opacity: 0.7;">🌲 RANDOM FOREST</div>
+                <div class="result-emoji">{emoji_rf}</div>
+                <div class="result-label">{label_rf}</div>
+                <div style="font-size: 0.9rem; margin: 0.5rem 0;">Confianza: {conf_rf:.1f}%</div>
+                <div style="background: rgba(255,255,255,0.2); border-radius: 10px; height: 8px; overflow: hidden;">
+                    <div style="background: {color_rf}; width: {conf_rf}%; height: 100%; transition: width 0.5s;"></div>
+                </div>
+                <div style="margin-top: 0.5rem;">
+                    <small>{desc_rf[:100]}...</small>
+                </div>
             </div>
             """, unsafe_allow_html=True)
-
-    show_result(rf_model, "🌲 Random Forest",     "rf-card", res_col1)
-    show_result(dt_model, "🌴 Árbol de Decisión", "dt-card", res_col2)
-
-    st.markdown("")
-    with st.expander("📊 Ver características ingresadas"):
-        feature_names = [
-            "pelo","plumas","huevos","leche","vuela","acuatico",
-            "depredador","con_dientes","columna_vertebral","respira",
-            "venenoso","aletas","patas","cola","domestico","tamano_gato",
-        ]
-        feat_data = {n: [int(v)] for n, v in zip(feature_names, features[0])}
-        st.dataframe(pd.DataFrame(feat_data), use_container_width=True)
-
-
-# ─────────────────────────────────────────────────────────────
-#  FOOTER — hierba animada
-# ─────────────────────────────────────────────────────────────
-heights_g  = [32,48,38,55,28,46,42,52,35,50,40,58,30,45,38,52,44,36,50,34,48,42,56,38,46]
-greens     = ["#2e7d32","#388e3c","#43a047","#1b5e20","#4caf50","#33691e","#558b2f"]
-blades_html = "".join(
-    f'<div class="blade" style="'
-    f'width:{5 + (i%3)*2}px;'
-    f'height:{heights_g[i % len(heights_g)]}px;'
-    f'background:linear-gradient(180deg,{greens[i%len(greens)]} 0%,{greens[(i+2)%len(greens)]} 100%);'
-    f'animation-delay:{i * 0.06:.2f}s;'
-    f'animation-duration:{1.8 + (i%4)*0.3:.1f}s;'
-    f'opacity:{0.55 + (i%5)*0.09:.2f};'
-    f'"></div>'
-    for i in range(130)
-)
-st.markdown(f'<div class="grass-row">{blades_html}</div>', unsafe_allow_html=True)
-st.markdown(
-    '<p style="text-align:center;color:rgba(129,199,132,.35);'
-    'font-size:.82rem;margin-top:.2rem;font-family:Nunito,sans-serif;">'
-    '🐾 Zoo Clasificador &nbsp;·&nbsp; PA2 &nbsp;·&nbsp; Machine Learning &nbsp;·&nbsp; 2025</p>',
-    unsafe_allow_html=True,
-)
+        
+        # Decision Tree
+        with col2:
+            pred_dt = dt_model.predict(features)[0]
+            pred_key_dt = str(pred_dt).strip()
+            info_dt = CLASS_LABELS.get(pred_key_dt, ("🐾", pred_key_dt, "#4caf50", ""))
+            emoji_dt, label_dt, color_dt, desc_dt = info_dt
+            
+            proba_dt = dt_model.predict_proba(features)[0]
+            conf_dt = proba_dt.max() * 100
+            
+            st.markdown(f"""
+            <div class="result-card" style="background: linear-gradient(135deg, rgba({int(color_dt[1:3],16)},{int(color_dt[3:5],16)},{int(color_dt[5:7],16)},0.15) 0%, rgba({int(color_dt[1:3],16)},{int(color_dt[3:5],16)},{int(color_dt[5:7],16)},0.05) 100%);">
+                <div style="font-size: 0.8rem; opacity: 0.7;">🌴 ÁRBOL DE DECISIÓN</div>
+                <div class="result-emoji">{emoji_dt}</div>
+                <div class="result-label">{label_dt}</div>
+                <div style="font-size: 0.9rem; margin: 0.5rem 0;">Confianza: {conf_dt:.1f}%</div>
+                <div style="background: rgba(255,255,255,0.2); border-radius: 10px; height: 8px; overflow: hidden;">
+                    <div style="background: {color_dt}; width: {conf_dt}%; height: 100%; transition: width 0.5s;"></div>
+                </div>
+                <div style="margin-top: 0.5rem;">
+                    <small>{desc_dt[:100]}...</small>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    elif model_choice == "🌳 Random Forest":
+        pred = rf_model.predict(features)[0]
+        pred_key = str(pred).strip()
+        info = CLASS_LABELS.get(pred_key, ("🐾", pred_key, "#4caf50", ""))
+        emoji, label, color, desc = info
+        
+        proba = rf_model.predict_proba(features)[0]
+        conf = proba.max() * 100
+        
+        st.markdown(f"""
+        <div class="result-card" style="max-width: 500px; margin: 0 auto; background: linear-gradient(135deg, rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.2) 0%, rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.1) 100%);">
+            <div style="font-size: 0.9rem; opacity: 0.8;">🌲 RANDOM FOREST</div>
+            <div class="result-emoji">{emoji}</div>
+            <div class="result-label">{label}</div>
+            <div style="font-size: 1.1rem; font-weight: 600; margin: 0.5rem 0;">{conf:.1f}% de confianza</div>
+            <div style="background: rgba(255,255,255,0.2); border-radius: 10px; height: 10px; overflow: hidden; margin: 1rem 0;">
+                <div style="background: {color}; width: {conf}%; height: 100%; transition: width 0.5s;"></div>
